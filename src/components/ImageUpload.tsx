@@ -1,4 +1,4 @@
-import { useCallback, useState } from "react";
+import { useCallback, useState, useRef } from "react";
 import { Upload, Camera, Image } from "lucide-react";
 
 interface ImageUploadProps {
@@ -8,6 +8,9 @@ interface ImageUploadProps {
 
 const ImageUpload = ({ onImageSelect, isProcessing }: ImageUploadProps) => {
   const [isDragging, setIsDragging] = useState(false);
+  const [isCameraOpen, setIsCameraOpen] = useState(false);
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const streamRef = useRef<MediaStream | null>(null);
 
   const handleFile = useCallback(
     (file: File) => {
@@ -27,6 +30,90 @@ const ImageUpload = ({ onImageSelect, isProcessing }: ImageUploadProps) => {
     },
     [handleFile]
   );
+
+  const openCamera = async (e: React.MouseEvent) => {
+    e.stopPropagation();
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: "environment" },
+      });
+      streamRef.current = stream;
+      setIsCameraOpen(true);
+      setTimeout(() => {
+        if (videoRef.current) {
+          videoRef.current.srcObject = stream;
+          videoRef.current.play();
+        }
+      }, 100);
+    } catch (err) {
+      console.error("Camera error:", err);
+      // Fallback: open file picker with capture
+      const input = document.createElement("input");
+      input.type = "file";
+      input.accept = "image/*";
+      input.capture = "environment";
+      input.onchange = (ev) => {
+        const file = (ev.target as HTMLInputElement).files?.[0];
+        if (file) handleFile(file);
+      };
+      input.click();
+    }
+  };
+
+  const capturePhoto = () => {
+    if (!videoRef.current) return;
+    const canvas = document.createElement("canvas");
+    canvas.width = videoRef.current.videoWidth;
+    canvas.height = videoRef.current.videoHeight;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
+    ctx.drawImage(videoRef.current, 0, 0);
+    canvas.toBlob((blob) => {
+      if (blob) {
+        const file = new File([blob], "camera-capture.jpg", { type: "image/jpeg" });
+        handleFile(file);
+      }
+    }, "image/jpeg", 0.9);
+    closeCamera();
+  };
+
+  const closeCamera = () => {
+    streamRef.current?.getTracks().forEach((t) => t.stop());
+    streamRef.current = null;
+    setIsCameraOpen(false);
+  };
+
+  if (isCameraOpen) {
+    return (
+      <div className="relative overflow-hidden rounded-xl border-2 border-primary bg-black">
+        <video
+          ref={videoRef}
+          autoPlay
+          playsInline
+          muted
+          className="w-full aspect-video object-cover"
+        />
+        {/* Scan overlay */}
+        <div className="absolute inset-0 pointer-events-none border-2 border-primary/30">
+          <div className="absolute inset-x-[15%] inset-y-[25%] border-2 border-primary/60 rounded-lg" />
+        </div>
+        <div className="absolute bottom-0 inset-x-0 flex items-center justify-center gap-4 p-4 bg-gradient-to-t from-black/80 to-transparent">
+          <button
+            onClick={closeCamera}
+            className="rounded-lg bg-muted/80 px-4 py-2 text-sm font-medium text-foreground hover:bg-muted"
+          >
+            Cancel
+          </button>
+          <button
+            onClick={capturePhoto}
+            className="rounded-full h-14 w-14 bg-primary text-primary-foreground flex items-center justify-center hover:bg-primary/90 transition-colors"
+          >
+            <Camera className="h-6 w-6" />
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div
@@ -50,7 +137,6 @@ const ImageUpload = ({ onImageSelect, isProcessing }: ImageUploadProps) => {
         input.click();
       }}
     >
-      {/* Scan line overlay */}
       {isProcessing && (
         <div className="absolute inset-0 overflow-hidden rounded-xl">
           <div className="scan-line absolute inset-x-0 h-1/3" />
@@ -58,9 +144,12 @@ const ImageUpload = ({ onImageSelect, isProcessing }: ImageUploadProps) => {
       )}
 
       <div className="flex items-center gap-3">
-        <div className="flex h-14 w-14 items-center justify-center rounded-xl bg-primary/10 text-primary">
+        <button
+          onClick={openCamera}
+          className="flex h-14 w-14 items-center justify-center rounded-xl bg-primary/10 text-primary hover:bg-primary/20 transition-colors"
+        >
           <Camera className="h-7 w-7" />
-        </div>
+        </button>
         <div className="flex h-14 w-14 items-center justify-center rounded-xl bg-primary/10 text-primary">
           <Upload className="h-7 w-7" />
         </div>
@@ -74,7 +163,7 @@ const ImageUpload = ({ onImageSelect, isProcessing }: ImageUploadProps) => {
           {isProcessing ? "Scanning plate..." : "Drop vehicle image here"}
         </p>
         <p className="mt-1 text-sm text-muted-foreground">
-          or click to browse • JPG, PNG, WEBP supported
+          or click to browse • tap camera to capture live
         </p>
       </div>
     </div>
