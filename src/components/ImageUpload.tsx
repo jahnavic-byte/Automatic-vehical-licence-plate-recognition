@@ -195,7 +195,7 @@ const ImageUpload = ({ onImageSelect, isProcessing, onAutoDetectCapture }: Image
           motionCooldownRef.current = false;
           prevFrameRef.current = null; // reset baseline after cooldown
           setAutoDetectStatus("Waiting for vehicle...");
-        }, 10000);
+        }, 7000);
       }, 500); // Check motion every 500ms
     }, 1000);
 
