@@ -45,6 +45,8 @@ const ImageUpload = ({ onImageSelect, isProcessing, onAutoDetectCapture }: Image
       autoDetectIntervalRef.current = null;
     }
     isCapturingRef.current = false;
+    motionCooldownRef.current = false;
+    prevFrameRef.current = null;
   }, []);
 
   const closeCamera = useCallback(() => {
