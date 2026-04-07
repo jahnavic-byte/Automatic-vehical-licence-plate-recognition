@@ -116,32 +116,87 @@ const ImageUpload = ({ onImageSelect, isProcessing, onAutoDetectCapture }: Image
     return new File([blob], `autodetect-${Date.now()}.jpg`, { type: "image/jpeg" });
   }, []);
 
-  // Start auto-detect scanning loop when mode is active
+  // Detect motion by comparing current frame to previous frame
+  const detectMotion = useCallback((): boolean => {
+    if (!videoRef.current || videoRef.current.readyState < 2) return false;
+    if (!canvasRef.current) canvasRef.current = document.createElement("canvas");
+    const canvas = canvasRef.current;
+    const w = 160; // downscale for performance
+    const h = 90;
+    canvas.width = w;
+    canvas.height = h;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return false;
+    ctx.drawImage(videoRef.current, 0, 0, w, h);
+    const currentFrame = ctx.getImageData(0, 0, w, h);
+
+    if (!prevFrameRef.current) {
+      prevFrameRef.current = currentFrame;
+      return false;
+    }
+
+    const prev = prevFrameRef.current.data;
+    const curr = currentFrame.data;
+    let diffCount = 0;
+    const totalPixels = w * h;
+    for (let i = 0; i < prev.length; i += 16) { // sample every 4th pixel
+      const dr = Math.abs(curr[i] - prev[i]);
+      const dg = Math.abs(curr[i + 1] - prev[i + 1]);
+      const db = Math.abs(curr[i + 2] - prev[i + 2]);
+      if (dr + dg + db > 80) diffCount++;
+    }
+    prevFrameRef.current = currentFrame;
+    const changeRatio = diffCount / (totalPixels / 4);
+    // Trigger when 8-60% of pixels changed (vehicle entering, not camera shake or full scene change)
+    return changeRatio > 0.08 && changeRatio < 0.6;
+  }, []);
+
+  // Start auto-detect scanning loop — only captures when motion (vehicle) is detected
   useEffect(() => {
     if (!isAutoDetect || !isCameraOpen) return;
 
     const handler = onAutoDetectCapture || onImageSelect;
 
-    // Wait a moment for the video to be ready
     const startTimeout = setTimeout(() => {
-      setAutoDetectStatus("Scanning for plates...");
+      setAutoDetectStatus("Waiting for vehicle...");
 
+      // Check for motion frequently, but only capture on detection
       autoDetectIntervalRef.current = setInterval(() => {
-        if (isCapturingRef.current) return; // skip if previous capture still processing
-        const file = captureFrame();
-        if (!file) return;
+        if (isCapturingRef.current || motionCooldownRef.current) return;
+
+        const motionDetected = detectMotion();
+        if (!motionDetected) return;
+
+        // Motion detected — capture full-res frame
+        if (!canvasRef.current) canvasRef.current = document.createElement("canvas");
+        const canvas = canvasRef.current;
+        canvas.width = videoRef.current!.videoWidth;
+        canvas.height = videoRef.current!.videoHeight;
+        const ctx = canvas.getContext("2d");
+        if (!ctx) return;
+        ctx.drawImage(videoRef.current!, 0, 0);
+        const dataUrl = canvas.toDataURL("image/jpeg", 0.85);
+        const byteString = atob(dataUrl.split(",")[1]);
+        const ab = new ArrayBuffer(byteString.length);
+        const ia = new Uint8Array(ab);
+        for (let i = 0; i < byteString.length; i++) ia[i] = byteString.charCodeAt(i);
+        const blob = new Blob([ab], { type: "image/jpeg" });
+        const file = new File([blob], `autodetect-${Date.now()}.jpg`, { type: "image/jpeg" });
 
         isCapturingRef.current = true;
-        setAutoDetectStatus("Analyzing frame...");
+        motionCooldownRef.current = true;
+        setAutoDetectStatus("Vehicle detected! Scanning plate...");
         const url = URL.createObjectURL(file);
         handler(file, url);
 
-        // Allow next capture after a delay
+        // Cooldown — wait 10s before allowing next detection
         setTimeout(() => {
           isCapturingRef.current = false;
-          setAutoDetectStatus("Scanning for plates...");
-        }, 10000); // Wait 10s between captures
-      }, 10000); // Check every 10s
+          motionCooldownRef.current = false;
+          prevFrameRef.current = null; // reset baseline after cooldown
+          setAutoDetectStatus("Waiting for vehicle...");
+        }, 10000);
+      }, 500); // Check motion every 500ms
     }, 1000);
 
     return () => {
@@ -151,7 +206,7 @@ const ImageUpload = ({ onImageSelect, isProcessing, onAutoDetectCapture }: Image
         autoDetectIntervalRef.current = null;
       }
     };
-  }, [isAutoDetect, isCameraOpen, captureFrame, onAutoDetectCapture, onImageSelect]);
+  }, [isAutoDetect, isCameraOpen, detectMotion, onAutoDetectCapture, onImageSelect]);
 
   const openCamera = async (e: React.MouseEvent) => {
     e.stopPropagation();
