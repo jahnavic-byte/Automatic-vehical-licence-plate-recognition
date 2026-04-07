@@ -16,7 +16,9 @@ const ImageUpload = ({ onImageSelect, isProcessing, onAutoDetectCapture }: Image
   const streamRef = useRef<MediaStream | null>(null);
   const autoDetectIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const prevFrameRef = useRef<ImageData | null>(null);
   const isCapturingRef = useRef(false);
+  const motionCooldownRef = useRef(false);
 
   const handleFile = useCallback(
     (file: File) => {
