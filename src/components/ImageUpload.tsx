@@ -136,8 +136,8 @@ const ImageUpload = ({ onImageSelect, isProcessing, onAutoDetectCapture }: Image
         setTimeout(() => {
           isCapturingRef.current = false;
           setAutoDetectStatus("Scanning for plates...");
-        }, 4000); // Wait 4s between captures to avoid rate limits
-      }, 2000); // Check every 2s
+        }, 10000); // Wait 10s between captures
+      }, 10000); // Check every 10s
     }, 1000);
 
     return () => {
